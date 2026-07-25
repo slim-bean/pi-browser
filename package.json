@@ -1,0 +1,25 @@
+{
+  "name": "pi-browser-history",
+  "version": "0.1.0",
+  "description": "Search your local browser history (Chrome/Edge/Brave/Arc/Vivaldi/Opera/Firefox/Safari) from pi: /history panel + browser_history tool",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "browser",
+    "history",
+    "search",
+    "chrome",
+    "firefox",
+    "safari"
+  ],
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extension/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}
