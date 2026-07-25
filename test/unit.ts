@@ -11,7 +11,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { formatResults, formatSources } from "../extension/format.ts";
-import { HistoryPanel, ResultsList, styleWithTerms } from "../extension/panel.ts";
+import {
+  HistoryPanel,
+  ResultsList,
+  styleWithTerms,
+  type PanelAction,
+} from "../extension/panel.ts";
 import { normalizeHost, parseQuery } from "../extension/query.ts";
 import { HistoryStore, buildQuery, hostOf, scoreEntry, urlKey } from "../extension/search.ts";
 import type { HistoryEntry } from "../extension/search.ts";
@@ -240,6 +245,14 @@ assert.equal(grouped.sites.find((site) => site.host === "github.com")!.pages, 1)
 const visitSorted = store.search(lokiQuery, { now: NOW, sort: "visits", limit: 10 });
 assert.equal(visitSorted.entries[0]!.visits, 16, "visits sort");
 
+const unknownBrowser = store.search(parseQuery("loki in:netscape", NOW), { now: NOW });
+assert.equal(unknownBrowser.entries.length, 0, "unknown browser filter matches nothing");
+assert.match(
+  unknownBrowser.errors[0]!.message,
+  /available: chrome, firefox/,
+  "unknown browser filter lists valid source ids",
+);
+
 const missing = new HistoryStore([{ ...sources[0]!, id: "gone", dbPath: join(dir, "nope.db") }]);
 const missingResult = missing.search(lokiQuery, { now: NOW });
 assert.equal(missingResult.errors.length, 1, "unreadable source reported, not thrown");
@@ -327,7 +340,9 @@ list.setEntries([], []);
 assert(list.render(100).some((line) => line.includes("no matches")), "empty state");
 
 const queries: string[] = [];
-let action: PanelAction | null | "unset" = "unset";
+// Recorded rather than overwritten, so each assertion reads a fresh value
+// (and TypeScript cannot narrow it away).
+const actions: (PanelAction | null)[] = [];
 const panel = new HistoryPanel({
   theme,
   initialQuery: "",
@@ -335,7 +350,9 @@ const panel = new HistoryPanel({
     queries.push(query);
     return { entries: makeEntries(query ? 3 : 1), terms: query.split(/\s+/).filter(Boolean), total: 42, notes: [] };
   },
-  done: (result) => (action = result),
+  done: (result) => {
+    actions.push(result);
+  },
 });
 assert.deepEqual(queries, [""], "initial search");
 panel.handleInput("l");
@@ -347,19 +364,17 @@ assert(panel.render(100).some((line) => line.includes("3 of 42 pages")), "header
 panel.handleInput("\x1b[B"); // down
 assert.equal(queries.at(-1), "lo", "navigation does not re-search");
 panel.handleInput("\r");
-assert.equal((action as PanelAction).type, "open");
-assert.equal((action as PanelAction).entry.url, "https://example.test/page-1");
+assert.equal(actions.at(-1)?.type, "open");
+assert.equal(actions.at(-1)?.entry.url, "https://example.test/page-1");
 
-action = "unset";
 panel.handleInput("\t");
-assert.equal((action as PanelAction).type, "copy");
+assert.equal(actions.at(-1)?.type, "copy");
 
-action = "unset";
 panel.handleInput("\x1b[Z"); // shift+tab
-assert.equal((action as PanelAction).type, "insert");
+assert.equal(actions.at(-1)?.type, "insert");
 
-action = "unset";
 panel.handleInput("\x1b");
-assert.equal(action, null, "escape cancels");
+assert.equal(actions.at(-1), null, "escape cancels");
+assert.equal(actions.length, 4, "one action per accepted key");
 
 console.log("unit tests passed");

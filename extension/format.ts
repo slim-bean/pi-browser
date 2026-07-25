@@ -1,6 +1,7 @@
 /**
  * Compact text rendering of search results for the LLM (two lines per hit).
  */
+import { homedir } from "node:os";
 import { describeFilters, type ParsedQuery } from "./query.ts";
 import type { SearchResult } from "./search.ts";
 import type { HistorySource } from "./sources.ts";
@@ -100,10 +101,12 @@ export function formatResults(
 /** `/history --sources` and error messages. */
 export function formatSources(sources: HistorySource[]): string {
   if (sources.length === 0) return "No browser history databases found.";
+  const home = homedir();
   const lines = [`${plural(sources.length, "history database")} found:`];
   for (const source of sources) {
+    const path = source.dbPath.startsWith(home) ? `~${source.dbPath.slice(home.length)}` : source.dbPath;
     lines.push(
-      `  ${source.id.padEnd(24)} ${source.engine.padEnd(9)} ${relativeTime(source.mtimeMs).padEnd(10)} ${source.dbPath}`,
+      `  ${source.id.padEnd(24)} ${source.engine.padEnd(9)} ${relativeTime(source.mtimeMs).padEnd(10)} ${path}`,
     );
   }
   return lines.join("\n");

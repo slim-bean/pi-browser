@@ -409,6 +409,12 @@ export class HistoryStore {
 
     const active = filterSources(this.sources, query.browsers);
     const errors: SourceError[] = [];
+    if (active.length === 0 && this.sources.length > 0) {
+      errors.push({
+        source: query.browsers.join(", "),
+        message: `no such browser or profile; available: ${this.sources.map((source) => source.id).join(", ")}`,
+      });
+    }
     const used: { id: string; label: string; copied: boolean }[] = [];
     const rows: RawRow[] = [];
     let truncated = false;
