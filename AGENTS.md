@@ -56,6 +56,9 @@ local browser history databases. See README.md for usage and architecture.
   queries, prints per-keystroke latency (expect ~10–50 ms).
 - `node test/render.ts [query] [width]` — prints the panel with ANSI colours to
   eyeball layout and highlighting.
+- Typecheck (no local typescript dep): install `typescript` + `@types/node`
+  somewhere, symlink `node_modules/@types` to it, then `tsc -p .`
+  (`tsconfig.json` covers `extension/` and `test/`).
 - End-to-end tool check without the TUI:
   `pi -ne -e ./extension/index.ts -t browser_history -p "use browser_history to find ..."`.
 - Manual: run `pi` anywhere and use `/history`.
