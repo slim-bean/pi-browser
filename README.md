@@ -67,18 +67,36 @@ pi install /path/to/pi-browser                         # local checkout
 pi -e git:github.com/slim-bean/pi-browser              # try it for one run
 ```
 
+`pi install` records the source in `~/.pi/agent/settings.json` (use `-l` for
+`.pi/settings.json` in the current project). You can also add it by hand — paths
+are resolved relative to the settings file that contains them:
+
+```json
+{
+  "packages": [
+    "../../projects/pi-browser",
+    "git:github.com/slim-bean/pi-browser@v0.1.0"
+  ]
+}
+```
+
+A local path is loaded in place, so edits apply on the next `/reload` — no
+reinstall and no symlink needed. `pi list` shows what is configured.
+
 Nothing is downloaded beyond the repo: the pi packages it imports
 (`pi-coding-agent`, `pi-tui`, `pi-ai`, `typebox`) are `peerDependencies` that pi
 provides at load time, and `.npmrc` (`omit=peer`) keeps `npm install` from
 fetching its own copies.
 
-Or, for development, symlink the `extension/` directory into pi's global
-extensions dir (don't combine with `pi install`, or `/history` loads twice as
-`/history:1` and `/history:2`):
+Alternatively, symlink the `extension/` directory into pi's global extensions
+dir:
 
 ```bash
 ln -sfn "$(pwd)/extension" ~/.pi/agent/extensions/browser-history
 ```
+
+Pick one mechanism, not both: two registrations make pi rename the command to
+`/history:1` and `/history:2`.
 
 Then `/reload` (or restart pi). No `npm install` needed — zero runtime
 dependencies.

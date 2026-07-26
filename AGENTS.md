@@ -11,10 +11,11 @@ local browser history databases. See README.md for usage and architecture.
   relative imports need explicit `.ts` extensions.
 - Installable as a pi package (`package.json` `pi.extensions` → `./extension/index.ts`;
   pi deps are `peerDependencies` per docs/packages.md) via
-  `pi install git:github.com/slim-bean/pi-browser[@tag]`. Locally installed by
-  symlink: `~/.pi/agent/extensions/browser-history -> ./extension`. After edits,
-  `/reload` in pi. Don't run both at once — duplicate commands get `:1`/`:2`
-  suffixes.
+  `pi install git:github.com/slim-bean/pi-browser[@tag]`. **Currently installed
+  as a local package**: `"../../projects/pi-browser"` in `~/.pi/agent/settings.json`
+  `packages` (paths resolve relative to that file). Loaded in place, so edits
+  need only `/reload`. A symlink in `~/.pi/agent/extensions/` is the alternative
+  — never both, or the command becomes `/history:1` and `/history:2`.
 - Every non-`node:` import must be in `peerDependencies`: `pi-coding-agent`,
   `pi-tui`, `pi-ai` (`StringEnum`), `typebox` (`Type`). pi's jiti loader aliases
   all of them to its own copies, so they must not be installed here: npm ≥ 7
