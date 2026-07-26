@@ -10,9 +10,16 @@ local browser history databases. See README.md for usage and architecture.
   parameter properties, no enums) so `test/*.ts` runs with plain `node`;
   relative imports need explicit `.ts` extensions.
 - Installable as a pi package (`package.json` `pi.extensions` → `./extension/index.ts`;
-  pi deps are `peerDependencies` per docs/packages.md). Locally installed by
+  pi deps are `peerDependencies` per docs/packages.md) via
+  `pi install git:github.com/slim-bean/pi-browser[@tag]`. Locally installed by
   symlink: `~/.pi/agent/extensions/browser-history -> ./extension`. After edits,
-  `/reload` in pi.
+  `/reload` in pi. Don't run both at once — duplicate commands get `:1`/`:2`
+  suffixes.
+- Every non-`node:` import must be in `peerDependencies`: `pi-coding-agent`,
+  `pi-tui`, `pi-ai` (`StringEnum`), `typebox` (`Type`). pi's jiti loader aliases
+  all of them to its own copies, so they must not be installed here: npm ≥ 7
+  installs root peer deps, so `.npmrc` sets `omit=peer` (verify with
+  `git clone` to a temp dir + `npm install` → no `node_modules`).
 - `node_modules/@earendil-works/{pi-coding-agent,pi-tui,pi-ai}` and
   `node_modules/typebox` are symlinks into the global pi install so tests and
   editors resolve pi imports outside pi.

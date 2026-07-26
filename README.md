@@ -58,14 +58,23 @@ Times accept `30m`, `6h`, `7d`, `2w`, `3mo`, `1y` (optionally `... ago`), `now`,
 
 ## Install
 
-As a pi package (git remote or local checkout):
+As a pi package — from the git remote, or from a local checkout:
 
 ```bash
-pi install /path/to/pi-browser
+pi install git:github.com/slim-bean/pi-browser          # tracks the default branch
+pi install git:github.com/slim-bean/pi-browser@v0.1.0   # pinned tag
+pi install /path/to/pi-browser                         # local checkout
+pi -e git:github.com/slim-bean/pi-browser              # try it for one run
 ```
 
+Nothing is downloaded beyond the repo: the pi packages it imports
+(`pi-coding-agent`, `pi-tui`, `pi-ai`, `typebox`) are `peerDependencies` that pi
+provides at load time, and `.npmrc` (`omit=peer`) keeps `npm install` from
+fetching its own copies.
+
 Or, for development, symlink the `extension/` directory into pi's global
-extensions dir (don't combine with `pi install`, or it loads twice):
+extensions dir (don't combine with `pi install`, or `/history` loads twice as
+`/history:1` and `/history:2`):
 
 ```bash
 ln -sfn "$(pwd)/extension" ~/.pi/agent/extensions/browser-history
