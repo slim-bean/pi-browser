@@ -1,6 +1,6 @@
 {
   "name": "pi-browser-history",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Search your local browser history (Chrome/Edge/Brave/Arc/Vivaldi/Opera/Firefox/Safari) from pi: /history panel + browser_history tool",
   "license": "MIT",
   "keywords": [
