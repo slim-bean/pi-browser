@@ -84,10 +84,10 @@ A local path is loaded in place, so edits apply on the next `/reload` — no
 reinstall and no symlink needed. `pi list` shows what is configured.
 
 Nothing is downloaded beyond the repo: the pi packages it imports
-(`pi-coding-agent`, `pi-tui`, `pi-ai`, `typebox`) are `peerDependencies` that pi
-provides at load time, and `.npmrc` (`legacy-peer-deps=true`) stops npm ≥ 7 from
-fetching its own copies — without it, every git install pulls a second, unused
-pi dependency tree (~300 MB).
+(`pi-coding-agent`, `pi-tui`, `pi-ai`, `typebox`) are `peerDependencies` marked
+`optional` in `peerDependenciesMeta`, because pi injects them at load time.
+Without that marker npm ≥ 7 auto-installs them, and every git install drags in a
+second, unused pi dependency tree (~300 MB).
 
 Alternatively, symlink the `extension/` directory into pi's global extensions
 dir:

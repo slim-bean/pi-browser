@@ -19,13 +19,17 @@ local browser history databases. See README.md for usage and architecture.
 - Every non-`node:` import must be in `peerDependencies`: `pi-coding-agent`,
   `pi-tui`, `pi-ai` (`StringEnum`), `typebox` (`Type`). pi's jiti loader aliases
   all of them to its own copies (`dist/core/extensions/loader.js`), so they must
-  never be installed here — npm ≥ 7 installs root peer deps, which for a git
-  install means a second, unused pi tree (53 packages, ~300 MB).
-  `.npmrc` sets **`legacy-peer-deps=true`**: pi installs git packages with
+  never be installed here — npm ≥ 7 auto-installs root peer deps, which for a git
+  install means a second, unused pi tree (53 packages, ~300 MB). Each peer is
+  therefore marked `optional` in **`peerDependenciesMeta`**, which npm, pnpm and
+  yarn all read as "do not install this; the host provides it".
+  Do not use an `.npmrc` `omit=peer` for this: pi installs git packages with
   `npm install --omit=dev`, and a CLI `--omit` *replaces* the `omit` array from
-  `.npmrc`, so `omit=peer` alone does nothing there (npm-source packages are
-  fine — pi already passes `--legacy-peer-deps`). Verify after changing peers:
-  `git clone` to a temp dir, `npm install --omit=dev`, expect no `node_modules`.
+  `.npmrc`. (`legacy-peer-deps=true` also works but is a blunt project-wide
+  switch that disables peer conflict detection for real dependencies too; pi
+  itself passes `--legacy-peer-deps` for npm-source packages, not git ones.)
+  Verify after changing peers: `git clone` to a temp dir,
+  `npm install --omit=dev`, expect no `node_modules`.
 - `node_modules/@earendil-works/{pi-coding-agent,pi-tui,pi-ai}` and
   `node_modules/typebox` are symlinks into the global pi install so tests and
   editors resolve pi imports outside pi.
