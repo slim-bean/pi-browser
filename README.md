@@ -87,39 +87,46 @@ export PI_BROWSER_HISTORY_TOKEN_FILE=/run/secrets/browser-fetch/token
 # Or PI_BROWSER_HISTORY_TOKEN=…
 ```
 
-When configured, `browser_history` queries that gateway's `/history/search` instead
-of local databases. The parameters, ranking and output are the same. Authentication,
-network or helper failures never fall back to unrelated local history. Token files
-take precedence over the token env var; redirects are refused. Responses are capped
-at 2 MiB and calls time out after 20 seconds.
+When configured, `browser_history` obtains source metadata and normalized records
+from the gateway's native **history protocol v2**, not local databases. The tool's
+parameters/query syntax are unchanged. Query parsing, exact-host filtering, merging,
+ranking, grouping and formatting happen here, using the same pipeline as local
+history—not in the server. Authentication/network/database failures never fall back
+to unrelated local history. Token files take precedence; redirects are refused.
+Each HTTP response is capped at 8 MiB and 20 seconds. Remote searches share a 20,000
+candidate budget across selected profiles and retain at most 16 MiB of row text.
+Truncation is explicit; narrow filters before treating counts/rankings as complete.
+Use the gateway's **root token**; reader/driver credentials don't grant history.
 
 `/history <query>` prints a remote result rather than opening the local live-search
 panel; `/history --sources` lists remote source labels. Remote cache maintenance is
 server-owned, so `--clear-cache` does not clear local or remote files in remote mode.
 Unset the remote URL to return to ordinary local behavior.
 
-### Server helper
+### Independent server/client implementations
 
-`bin/history.ts` is a dependency-free **JSON stdin/stdout helper**, not another HTTP
-server. It requires Node >=22.19 and is hosted behind browser-fetch's authenticated
-HTTP gateway. It reuses `extension/api.ts`, the local parser, scoring and lock-safe
-SQLite snapshots; there is no second history implementation.
+browser-fetch reads only its operator-configured Chromium history root, using a
+native Go SQLite reader. It does not install this extension, run Node, or return
+agent-formatted text. This extension uses `GET /history/sources` and sends structured
+prefilters to `POST /history/query` (version 2, sourceId, terms/excluded/hosts, absolute
+millisecond bounds, candidate limit). The result is bounded records, not a database
+or profile download. The server's `hosts` filter is coarse; shared client-side
+processing does exact host/subdomain checks before presenting results. Date strings
+and display times use the **client's** timezone (as local history does); the wire
+carries absolute Unix milliseconds. Set the agent's TZ if you need a specific zone.
 
-```bash
-export PI_BROWSER_HISTORY_CHROMIUM_ROOTS='[{"browser":"assistant","dir":"/profile/chrome"}]'
-printf '%s' '{"operation":"search","params":{"query":"grafana","limit":10}}' | node bin/history.ts
-printf '%s' '{"operation":"sources"}' | node bin/history.ts
-```
+Remote source IDs/labels are directory-based (`assistant/Default`, etc.); local
+sources can still use browser display names. Use `/history --sources` for available
+IDs or `in:assistant` for the source family. There is no per-request path or SQL input.
 
-Only explicitly configured Chromium roots are searched on the helper host—never its
-other browser installations. Requests accept query fields, not filesystem paths,
-SQL or executable arguments. Sources responses omit database paths. Helper responses
-carry `version: 1`; errors have `code: bad_request | history_unavailable`. All source
-discovery/reads remain local to the browser host; no profile or database is downloaded
-to the agent. Unit tests: `node --test test/*.test.ts`.
+**Migration:** `bin/history.ts` and its helper protocol were removed. Use a native-v2
+browser-fetch image with `BROWSER_FETCH_HISTORY_ROOT`; remove old server helper env
+settings/build args. Old server responses are rejected with update advice—there is
+no v1 helper fallback. Local history configuration/behavior stays intact. Once on v2,
+client formatting/ranking updates no longer require rebuilding browser-fetch.
 
-The extension advertises `{remoteHistory: true}` through
-`pi-browser:capabilities:v1` (synchronous `request.result` assignment).
+The extension advertises `{remoteHistory: true, historyProtocol: 2}` through
+`pi-browser:capabilities:v1`. Unit tests: `node --test test/*.test.ts`.
 
 ## Install
 
@@ -209,7 +216,7 @@ still work.
 extension/
   index.ts      entry: browser_history tool + /history command + actions
   api.ts        shared validated query/result contract
-  remote.ts     authenticated gateway client (no local fallback)
+  remote.ts     native v2 record client; uses the shared local ranking/formatting pipeline
   sources.ts    browser/profile discovery per platform
   snapshot.ts   lock-safe opening, mtime-keyed database copies
   query.ts      query syntax parser (terms, -exclude, site:, since:, in:)
@@ -217,8 +224,6 @@ extension/
   search.ts     per-engine SQL, merging, collapsing, scoring, HistoryStore
   format.ts     compact text output for the LLM
   panel.ts      live TUI search panel
-bin/
-  history.ts    dependency-free JSON stdin/stdout helper for browser-fetch
 test/
   unit.ts       parsing, SQL building, scoring, merging, formatting, panel keys
                 (synthetic SQLite databases; node test/unit.ts)

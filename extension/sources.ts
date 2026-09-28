@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 /** Storage layout of a history database. Determines the SQL used to read it. */
 export type Engine = "chromium" | "firefox" | "safari";
 
-export interface HistorySource {
+export interface HistorySourceInfo {
   /** Stable filter id, e.g. "chrome", "chrome/ed-work", "firefox/default-release". */
   id: string;
   /** Browser family id, e.g. "chrome", "brave", "firefox", "safari". */
@@ -21,6 +21,9 @@ export interface HistorySource {
   profile: string | undefined;
   /** Display label, e.g. "chrome/Ed Work". */
   label: string;
+}
+
+export interface HistorySource extends HistorySourceInfo {
   engine: Engine;
   dbPath: string;
   mtimeMs: number;
@@ -286,7 +289,7 @@ export function discoverSources(options: { extraChromiumRoots?: ChromiumRoot[]; 
  * family, profile name or full label (all case/punctuation insensitive), so
  * `in:chrome` selects every Chrome profile and `in:ed-work` selects one.
  */
-export function filterSources(sources: HistorySource[], names: string[]): HistorySource[] {
+export function filterSources<T extends HistorySourceInfo>(sources: T[], names: string[]): T[] {
   if (names.length === 0) return sources;
   const wanted = names.map((name) => slug(name)).filter(Boolean);
   if (wanted.length === 0) return sources;

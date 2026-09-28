@@ -4,7 +4,7 @@
 import { homedir } from "node:os";
 import { describeFilters, type ParsedQuery } from "./query.ts";
 import type { SearchResult } from "./search.ts";
-import type { HistorySource } from "./sources.ts";
+import type { HistorySource, HistorySourceInfo } from "./sources.ts";
 import { formatDateTime, formatWhen, relativeTime } from "./time.ts";
 
 const MAX_TITLE = 120;
@@ -38,7 +38,7 @@ function header(result: SearchResult, query: ParsedQuery): string {
   return parts.join(" · ");
 }
 
-function notes(result: SearchResult, query: ParsedQuery, sources: HistorySource[]): string[] {
+function notes(result: SearchResult, query: ParsedQuery, sources: HistorySourceInfo[]): string[] {
   const lines: string[] = [];
   for (const error of query.errors) lines.push(`Ignored filter: ${error}`);
   for (const error of result.errors) lines.push(`Unavailable: ${error.source} — ${error.message}`);
@@ -59,7 +59,7 @@ function notes(result: SearchResult, query: ParsedQuery, sources: HistorySource[
 export function formatResults(
   result: SearchResult,
   query: ParsedQuery,
-  sources: HistorySource[],
+  sources: HistorySourceInfo[],
   now = Date.now(),
 ): string {
   const lines: string[] = [];

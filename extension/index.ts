@@ -12,7 +12,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { Type } from "typebox";
 import { formatSources } from "./format.ts";
 import { searchHistory } from "./api.ts";
-import { remoteUrl, remoteHistory, searchRemoteHistory } from "./remote.ts";
+import { remoteUrl, remoteSources, searchRemoteHistory } from "./remote.ts";
 import { HistoryPanel, type PanelAction, type PanelSearch } from "./panel.ts";
 import { parseQuery } from "./query.ts";
 import { HistoryStore } from "./search.ts";
@@ -68,7 +68,7 @@ function requireSources(): HistorySource[] {
 
 export default function (pi: ExtensionAPI) {
   pi.events.on("pi-browser:capabilities:v1", (request) => {
-    (request as { result?: unknown }).result = { remoteHistory: true };
+    (request as { result?: unknown }).result = { remoteHistory: true, historyProtocol: 2 };
   });
   pi.registerTool({
     name: "browser_history",
@@ -138,7 +138,7 @@ export default function (pi: ExtensionAPI) {
         if (input === "--clear-cache") {
           ctx.ui.notify("Remote history caches are managed on the browser host; nothing local was cleared.", "info");
         } else if (input === "--sources") {
-          const result = await remoteHistory("sources");
+          const result = await remoteSources();
           ctx.ui.notify(result.sources.map((s: { id: string; label: string }) => `${s.id}: ${s.label}`).join("\n") || "No remote history sources yet", "info");
         } else {
           const result = await searchRemoteHistory({ query: input });

@@ -39,15 +39,20 @@ local browser history databases. See README.md for usage and architecture.
 
 ## Remote history
 
-- `extension/api.ts` is the shared validated query/format contract. Keep local tool
-  and remote helper behavior aligned; no duplicate SQL or parser implementation.
-- `bin/history.ts` reads bounded JSON stdin and emits versioned JSON stdout. It
-  discovers only explicit Chromium roots (`includeDefaults: false`). Caller input
-  must never control root paths, SQL or commands. No pi imports/runtime dependencies.
-- `extension/remote.ts` implements authenticated HTTP with token-file precedence,
-  cancellation, size bounds and no redirects/local fallback. Remote `/history` is
-  query output, not the synchronous local panel. Protocol routes live in browser-fetch.
-- Tests: `node --test test/*.test.ts` includes real SQLite + helper/client tests.
+- `extension/api.ts` owns client query interpretation and tool formatting;
+  `search.ts` exports `rankRows`, shared by local SQLite and remote records.
+- `extension/remote.ts` uses native history protocol v2: `/history/sources`, then
+  structured `/history/query` prefilters by opaque sourceId. Validate rows/version,
+  enforce exact hosts in the shared ranker (server hosts is a coarse SQL prefilter),
+  and preserve truncation. No caller paths/SQL and no silent local or v1 fallback.
+- browser-fetch owns its native Chromium reader. It no longer runs Node or imports
+  this project. `bin/history.ts` was removed; don't reintroduce build/runtime coupling.
+- Token-file precedence, cancellation and response/aggregate budgets apply. Remote
+  `/history` prints results rather than using the synchronous local panel. Remote
+  source IDs use directory names; local sources can still use display names.
+- Tests: `node --test test/*.test.ts` compares local/remote filtering, ranking,
+  grouping and formatting over the same data. Live native-reader integration is
+  in `../pi-assistant/test/live.ts` (temporary synthetic profile only).
 
 ## Custom profiles
 
@@ -96,7 +101,7 @@ Test with `node --test test/sources.test.ts` (synthetic files only).
   eyeball layout and highlighting.
 - Typecheck (no local typescript dep): install `typescript` + `@types/node`
   somewhere, symlink `node_modules/@types` to it, then `tsc -p .`
-  (`tsconfig.json` covers `extension/`, `bin/`, and `test/`).
+  (`tsconfig.json` covers `extension/` and `test/`).
 - End-to-end tool check without the TUI:
   `pi -ne -e ./extension/index.ts -t browser_history -p "use browser_history to find ..."`.
 - Manual: run `pi` anywhere and use `/history`.

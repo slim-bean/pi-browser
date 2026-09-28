@@ -95,7 +95,7 @@ export interface SearchResult {
   limit: number;
 }
 
-interface RawRow {
+export interface RawRow {
   url: string;
   title: string;
   visits: number;
@@ -179,7 +179,7 @@ export function buildQuery(
   return {
     sql: `SELECT url, title, visits, ms FROM (${baseSelect(engine, hasHiddenColumn)})
           ${where}
-          ORDER BY ms DESC
+          ORDER BY ms DESC, url ASC
           LIMIT ?`,
     params,
   };
@@ -345,6 +345,45 @@ function groupSites(entries: HistoryEntry[], sort: Sort): SiteEntry[] {
   return list.sort(compare[sort]);
 }
 
+/** Shared presentation pipeline for local SQLite and remote normalized records. */
+export function rankRows(
+  rows: RawRow[], query: ParsedQuery, options: SearchOptions = {},
+  metadata: { sources: SearchResult["sources"]; errors: SourceError[]; truncated: boolean; started: number },
+): SearchResult {
+  const now = options.now ?? metadata.started;
+  const limit = Math.max(1, options.limit ?? 25);
+  const group = options.group ?? "page";
+  const sort = options.sort ?? (query.terms.length > 0 ? "relevance" : "recent");
+  const merged = new Map<string, HistoryEntry>();
+  for (const row of rows) {
+    if (!options.includeInternal && isInternal(row.url)) continue;
+    const host = hostOf(row.url);
+    if (!matchesHost(host, query.hosts)) continue;
+    const key = urlKey(row.url);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { url: row.url, title: row.title, host, visits: row.visits,
+        lastVisitMs: row.ms, sources: [row.sourceLabel], variants: 1, score: 0 });
+      continue;
+    }
+    existing.visits += row.visits;
+    if (row.ms > existing.lastVisitMs) {
+      existing.lastVisitMs = row.ms;
+      existing.url = row.url;
+      if (row.title) existing.title = row.title;
+    } else if (!existing.title && row.title) existing.title = row.title;
+    if (!existing.sources.includes(row.sourceLabel)) existing.sources.push(row.sourceLabel);
+  }
+  const entries = options.collapse === false ? [...merged.values()] : collapseSimilar([...merged.values()]);
+  for (const entry of entries) entry.score = scoreEntry(entry, query.terms, now);
+  sortEntries(entries, sort);
+  return {
+    entries: entries.slice(0, limit), sites: group === "site" ? groupSites(entries, sort).slice(0, limit) : [],
+    totalMatches: entries.length, sources: metadata.sources, errors: metadata.errors,
+    truncated: metadata.truncated, elapsedMs: Date.now() - metadata.started, sort, group, limit,
+  };
+}
+
 interface Handle {
   db?: DatabaseSync;
   error?: string;
@@ -403,9 +442,6 @@ export class HistoryStore {
     const now = options.now ?? started;
     const limit = Math.max(1, options.limit ?? 25);
     const candidateLimit = Math.max(limit, options.candidateLimit ?? 20_000);
-    const group: Group = options.group ?? "page";
-    // Without search terms, "relevance" degrades to "most recently visited".
-    const sort: Sort = options.sort ?? (query.terms.length > 0 ? "relevance" : "recent");
 
     const active = filterSources(this.sources, query.browsers);
     const errors: SourceError[] = [];
@@ -449,55 +485,7 @@ export class HistoryStore {
       }
     }
 
-    const merged = new Map<string, HistoryEntry>();
-    for (const row of rows) {
-      if (!options.includeInternal && isInternal(row.url)) continue;
-      const host = hostOf(row.url);
-      if (!matchesHost(host, query.hosts)) continue;
-
-      const key = urlKey(row.url);
-      const existing = merged.get(key);
-      if (!existing) {
-        merged.set(key, {
-          url: row.url,
-          title: row.title,
-          host,
-          visits: row.visits,
-          lastVisitMs: row.ms,
-          sources: [row.sourceLabel],
-          variants: 1,
-          score: 0,
-        });
-        continue;
-      }
-      existing.visits += row.visits;
-      if (row.ms > existing.lastVisitMs) {
-        existing.lastVisitMs = row.ms;
-        existing.url = row.url;
-        if (row.title) existing.title = row.title;
-      } else if (!existing.title && row.title) {
-        existing.title = row.title;
-      }
-      if (!existing.sources.includes(row.sourceLabel)) existing.sources.push(row.sourceLabel);
-    }
-
-    const entries =
-      options.collapse === false ? [...merged.values()] : collapseSimilar([...merged.values()]);
-    for (const entry of entries) entry.score = scoreEntry(entry, query.terms, now);
-    sortEntries(entries, sort);
-
-    return {
-      entries: entries.slice(0, limit),
-      sites: group === "site" ? groupSites(entries, sort).slice(0, limit) : [],
-      totalMatches: entries.length,
-      sources: used,
-      errors,
-      truncated,
-      elapsedMs: Date.now() - started,
-      sort,
-      group,
-      limit,
-    };
+    return rankRows(rows, query, { ...options, now }, { sources: used, errors, truncated, started });
   }
 
   close(): void {

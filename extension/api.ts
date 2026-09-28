@@ -1,8 +1,8 @@
 /** Shared local/remote history query contract. No pi imports or networking. */
 import { formatResults } from "./format.ts";
 import { normalizeHost, parseQuery, type Sort, type Group } from "./query.ts";
-import { HistoryStore } from "./search.ts";
-import { discoverSources, type HistorySource } from "./sources.ts";
+import { HistoryStore, type SearchResult } from "./search.ts";
+import { discoverSources, type HistorySource, type HistorySourceInfo } from "./sources.ts";
 import { parseTime } from "./time.ts";
 
 export interface HistoryParams {
@@ -24,10 +24,8 @@ export function validateParams(value: unknown): HistoryParams {
   return p as HistoryParams;
 }
 
-export function searchHistory(input: unknown, sources: HistorySource[] = discoverSources()) {
+export function prepareQuery(input: unknown, now = Date.now()) {
   const params = validateParams(input);
-  if (!sources.length) throw new Error("No browser history databases found in the configured sources");
-  const now = Date.now();
   const query = parseQuery(params.query ?? "", now);
   for (const host of (params.site ?? "").split(",")) {
     const normalized = normalizeHost(host);
@@ -40,11 +38,11 @@ export function searchHistory(input: unknown, sources: HistorySource[] = discove
     if (key === "since") query.sinceMs = time; else query.untilMs = time;
   }
   query.browsers.push(...(params.browsers ?? []));
-  const store = new HistoryStore(sources);
-  try {
-    const result = store.search(query, { limit: params.limit ?? 25, sort: params.sort, group: params.group, now });
+  return { params, query, now };
+}
+
+export function renderHistory(result: SearchResult, query: ReturnType<typeof prepareQuery>["query"], sources: HistorySourceInfo[], now: number) {
     return {
-      version: 1 as const,
       content: [{ type: "text" as const, text: formatResults(result, query, sources, now) }],
       details: {
         query: query.raw, totalMatches: result.totalMatches, sort: result.sort, group: result.group,
@@ -54,6 +52,15 @@ export function searchHistory(input: unknown, sources: HistorySource[] = discove
         sites: result.sites.map((s) => ({ host: s.host, pages: s.pages, visits: s.visits, lastVisit: new Date(s.lastVisitMs).toISOString(), exampleUrl: s.exampleUrl })),
       },
     };
+}
+
+export function searchHistory(input: unknown, sources: HistorySource[] = discoverSources()) {
+  const { params, query, now } = prepareQuery(input);
+  if (!sources.length) throw new Error("No browser history databases found in the configured sources");
+  const store = new HistoryStore(sources);
+  try {
+    const result = store.search(query, { limit: params.limit ?? 25, sort: params.sort, group: params.group, now });
+    return renderHistory(result, query, sources, now);
   } finally { store.close(); }
 }
-export type HistoryResponse = ReturnType<typeof searchHistory>;
+export type HistoryResponse = ReturnType<typeof renderHistory>;
