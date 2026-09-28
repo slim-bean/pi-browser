@@ -19,6 +19,7 @@
   "homepage": "https://github.com/slim-bean/pi-browser",
   "bugs": "https://github.com/slim-bean/pi-browser/issues",
   "type": "module",
+  "bin": { "pi-browser-history": "./bin/history.ts" },
   "engines": {
     "node": ">=22"
   },

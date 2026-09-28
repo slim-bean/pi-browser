@@ -6,7 +6,8 @@ week without remembering where it was.
 Reads the history databases of every browser profile on the machine (Chrome,
 Chromium, Edge, Brave, Arc, Vivaldi, Opera, Firefox, Safari), merges the same
 page across browsers, and ranks by match quality + recency + visit count.
-Everything is local and read-only; nothing is sent anywhere.
+History access is read-only. By default, queries run locally; optional remote mode
+queries your configured browser-fetch gateway. Tool results are provided to the LLM.
 
 Two entry points:
 
@@ -55,6 +56,70 @@ Times accept `30m`, `6h`, `7d`, `2w`, `3mo`, `1y` (optionally `... ago`), `now`,
 `browsers`, `limit` (default 25), `sort` (`relevance` | `recent` | `visits`) and
 `group` (`page` | `site`). `group: "site"` aggregates per host — useful for
 "which sites do I use for X". An empty query returns the most recent pages.
+
+## Additional browser profiles
+
+Dedicated automation profiles outside normal browser installation paths can be
+included explicitly. Set `PI_BROWSER_HISTORY_CHROMIUM_ROOTS` to a JSON array:
+
+```bash
+export PI_BROWSER_HISTORY_CHROMIUM_ROOTS='[{"browser":"assistant","dir":"~/.local/share/pi-assistant/chrome-profile"}]'
+```
+
+`dir` is the Chromium **user-data directory** (containing `Default/History`, not
+`History` itself). `browser` is a lowercase source id used in attribution and
+`in:assistant` / `browsers: ["assistant"]` filters. Ordinary browser sources remain
+enabled; duplicate database paths are read only once. Invalid configuration produces
+an explicit error. Missing/empty profiles appear once Chrome writes history. Chrome
+on a remote machine requires access to its history files; CDP alone does not make
+them local.
+
+For integrations/tests, `discoverSources({extraChromiumRoots, includeDefaults})`
+accepts the same objects; defaults are included unless explicitly disabled. History
+records a visit, not proof that a human read or endorsed a page. `/history` Enter
+still opens the OS default browser; assistant tools select their live tabs separately.
+
+## Remote browser history (same gateway port as CDP/fetch)
+
+```bash
+export PI_BROWSER_HISTORY_URL=http://browser-fetch.browser-test.svc.cluster.local:8377
+export PI_BROWSER_HISTORY_TOKEN_FILE=/run/secrets/browser-fetch/token
+# Or PI_BROWSER_HISTORY_TOKEN=…
+```
+
+When configured, `browser_history` queries that gateway's `/history/search` instead
+of local databases. The parameters, ranking and output are the same. Authentication,
+network or helper failures never fall back to unrelated local history. Token files
+take precedence over the token env var; redirects are refused. Responses are capped
+at 2 MiB and calls time out after 20 seconds.
+
+`/history <query>` prints a remote result rather than opening the local live-search
+panel; `/history --sources` lists remote source labels. Remote cache maintenance is
+server-owned, so `--clear-cache` does not clear local or remote files in remote mode.
+Unset the remote URL to return to ordinary local behavior.
+
+### Server helper
+
+`bin/history.ts` is a dependency-free **JSON stdin/stdout helper**, not another HTTP
+server. It requires Node >=22.19 and is hosted behind browser-fetch's authenticated
+HTTP gateway. It reuses `extension/api.ts`, the local parser, scoring and lock-safe
+SQLite snapshots; there is no second history implementation.
+
+```bash
+export PI_BROWSER_HISTORY_CHROMIUM_ROOTS='[{"browser":"assistant","dir":"/profile/chrome"}]'
+printf '%s' '{"operation":"search","params":{"query":"grafana","limit":10}}' | node bin/history.ts
+printf '%s' '{"operation":"sources"}' | node bin/history.ts
+```
+
+Only explicitly configured Chromium roots are searched on the helper host—never its
+other browser installations. Requests accept query fields, not filesystem paths,
+SQL or executable arguments. Sources responses omit database paths. Helper responses
+carry `version: 1`; errors have `code: bad_request | history_unavailable`. All source
+discovery/reads remain local to the browser host; no profile or database is downloaded
+to the agent. Unit tests: `node --test test/*.test.ts`.
+
+The extension advertises `{remoteHistory: true}` through
+`pi-browser:capabilities:v1` (synchronous `request.result` assignment).
 
 ## Install
 
@@ -143,6 +208,8 @@ still work.
 ```
 extension/
   index.ts      entry: browser_history tool + /history command + actions
+  api.ts        shared validated query/result contract
+  remote.ts     authenticated gateway client (no local fallback)
   sources.ts    browser/profile discovery per platform
   snapshot.ts   lock-safe opening, mtime-keyed database copies
   query.ts      query syntax parser (terms, -exclude, site:, since:, in:)
@@ -150,6 +217,8 @@ extension/
   search.ts     per-engine SQL, merging, collapsing, scoring, HistoryStore
   format.ts     compact text output for the LLM
   panel.ts      live TUI search panel
+bin/
+  history.ts    dependency-free JSON stdin/stdout helper for browser-fetch
 test/
   unit.ts       parsing, SQL building, scoring, merging, formatting, panel keys
                 (synthetic SQLite databases; node test/unit.ts)

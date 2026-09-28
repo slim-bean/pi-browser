@@ -10,13 +10,14 @@ import { spawnSync } from "node:child_process";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { formatResults, formatSources } from "./format.ts";
+import { formatSources } from "./format.ts";
+import { searchHistory } from "./api.ts";
+import { remoteUrl, remoteHistory, searchRemoteHistory } from "./remote.ts";
 import { HistoryPanel, type PanelAction, type PanelSearch } from "./panel.ts";
-import { normalizeHost, parseQuery, type Group, type Sort } from "./query.ts";
+import { parseQuery } from "./query.ts";
 import { HistoryStore } from "./search.ts";
 import { clearSnapshots } from "./snapshot.ts";
 import { discoverSources, type HistorySource } from "./sources.ts";
-import { parseTime } from "./time.ts";
 
 const STATUS_KEY = "browser-history";
 const PANEL_LIMIT = 50;
@@ -55,22 +56,6 @@ function copyToClipboard(text: string): boolean {
   return false;
 }
 
-function requireTime(value: string, now: number, label: string): number {
-  const parsed = parseTime(value, now);
-  if (parsed === undefined) {
-    throw new Error(
-      `Could not parse ${label}="${value}". Use 30m/6h/7d/2w/3mo/1y, today, yesterday, or 2026-07-01[ 14:30].`,
-    );
-  }
-  return parsed;
-}
-
-function splitList(value: string | string[] | undefined): string[] {
-  if (!value) return [];
-  const list = Array.isArray(value) ? value : value.split(",");
-  return list.map((item) => item.trim()).filter(Boolean);
-}
-
 function requireSources(): HistorySource[] {
   const sources = discoverSources();
   if (sources.length === 0) {
@@ -82,21 +67,25 @@ function requireSources(): HistorySource[] {
 }
 
 export default function (pi: ExtensionAPI) {
+  pi.events.on("pi-browser:capabilities:v1", (request) => {
+    (request as { result?: unknown }).result = { remoteHistory: true };
+  });
   pi.registerTool({
     name: "browser_history",
     label: "Browser History",
     description:
-      "Search the user's local browser history (pages they actually visited) across Chrome, Chromium, " +
+      "Search configured browser history (local profiles or a remote gateway; check user/agent source labels) across Chrome, Chromium, " +
       "Edge, Brave, Arc, Vivaldi, Opera, Firefox and Safari profiles. Matching is case-insensitive " +
       "substring matching over page titles and URLs; results are merged per page across browsers and " +
       "ranked by match quality, recency and visit count. Use it to recover a page the user cannot name " +
-      "exactly, to check what they read about a topic, or to list the sites they use for something. " +
-      "An empty query returns the most recently visited pages. " +
+      "exactly, find visits about a topic, or list previously used sites. " +
+      "An empty query returns the most recently visited pages. When a remote gateway is configured, " +
+      "searches that browser's history rather than this machine's; never falls back silently. " +
       QUERY_SYNTAX,
     promptSnippet:
-      "Search the user's local browser history for pages they visited (by text, site, and time window)",
+      "Search local or remote browser history by text, site, and time window",
     promptGuidelines: [
-      "Use browser_history when the user refers to a page, article, PR, doc, or site they visited recently but cannot name or link exactly.",
+      "Use browser_history to recover previously visited pages. Check source labels to distinguish user and assistant browsing; history records URLs/titles, not what someone read or concluded.",
     ],
     parameters: Type.Object({
       query: Type.Optional(
@@ -135,55 +124,9 @@ export default function (pi: ExtensionAPI) {
         }),
       ),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const now = Date.now();
-      const query = parseQuery(params.query ?? "", now);
-      for (const host of splitList(params.site)) {
-        const normalized = normalizeHost(host);
-        if (normalized) query.hosts.push(normalized);
-      }
-      if (params.since) query.sinceMs = requireTime(params.since, now, "since");
-      if (params.until) query.untilMs = requireTime(params.until, now, "until");
-      query.browsers.push(...splitList(params.browsers));
-
-      const sources = requireSources();
-      const store = new HistoryStore(sources);
-      try {
-        const result = store.search(query, {
-          limit: params.limit ?? DEFAULT_LIMIT,
-          sort: params.sort as Sort | undefined,
-          group: params.group as Group | undefined,
-          now,
-        });
-        return {
-          content: [{ type: "text", text: formatResults(result, query, sources, now) }],
-          details: {
-            query: query.raw,
-            totalMatches: result.totalMatches,
-            sort: result.sort,
-            group: result.group,
-            elapsedMs: result.elapsedMs,
-            sources: result.sources.map((source) => source.label),
-            errors: result.errors,
-            entries: result.entries.map((entry) => ({
-              title: entry.title,
-              url: entry.url,
-              lastVisit: new Date(entry.lastVisitMs).toISOString(),
-              visits: entry.visits,
-              sources: entry.sources,
-            })),
-            sites: result.sites.map((site) => ({
-              host: site.host,
-              pages: site.pages,
-              visits: site.visits,
-              lastVisit: new Date(site.lastVisitMs).toISOString(),
-              exampleUrl: site.exampleUrl,
-            })),
-          },
-        };
-      } finally {
-        store.close();
-      }
+    async execute(_toolCallId, params, signal) {
+      const { content, details } = remoteUrl() ? await searchRemoteHistory(params, signal) : searchHistory(params);
+      return { content, details };
     },
   });
 
@@ -191,6 +134,18 @@ export default function (pi: ExtensionAPI) {
     description: "Search browser history (live panel; --sources, --clear-cache)",
     handler: async (args, ctx: ExtensionCommandContext) => {
       const input = (args ?? "").trim();
+      if (remoteUrl()) {
+        if (input === "--clear-cache") {
+          ctx.ui.notify("Remote history caches are managed on the browser host; nothing local was cleared.", "info");
+        } else if (input === "--sources") {
+          const result = await remoteHistory("sources");
+          ctx.ui.notify(result.sources.map((s: { id: string; label: string }) => `${s.id}: ${s.label}`).join("\n") || "No remote history sources yet", "info");
+        } else {
+          const result = await searchRemoteHistory({ query: input });
+          ctx.ui.notify(result.content.map((c) => c.text).join("\n"), "info");
+        }
+        return;
+      }
 
       if (input === "--clear-cache") {
         const removed = clearSnapshots();

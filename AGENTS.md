@@ -37,6 +37,27 @@ local browser history databases. See README.md for usage and architecture.
   `PI_BROWSER_HISTORY_CACHE`). Safe to delete anytime; `/history --clear-cache`
   does it.
 
+## Remote history
+
+- `extension/api.ts` is the shared validated query/format contract. Keep local tool
+  and remote helper behavior aligned; no duplicate SQL or parser implementation.
+- `bin/history.ts` reads bounded JSON stdin and emits versioned JSON stdout. It
+  discovers only explicit Chromium roots (`includeDefaults: false`). Caller input
+  must never control root paths, SQL or commands. No pi imports/runtime dependencies.
+- `extension/remote.ts` implements authenticated HTTP with token-file precedence,
+  cancellation, size bounds and no redirects/local fallback. Remote `/history` is
+  query output, not the synchronous local panel. Protocol routes live in browser-fetch.
+- Tests: `node --test test/*.test.ts` includes real SQLite + helper/client tests.
+
+## Custom profiles
+
+`PI_BROWSER_HISTORY_CHROMIUM_ROOTS` is a validated JSON array of `{browser, dir}`
+Chromium user-data roots; this adds assistant/automation profiles without changing
+normal discovery. `discoverSources({extraChromiumRoots, includeDefaults})` is the
+public pure-discovery API. Deduplicate by real database path before assigning IDs.
+Source labels distinguish assistant visits from human browsing. No database writes.
+Test with `node --test test/sources.test.ts` (synthetic files only).
+
 ## Gotchas
 
 - **Chromium locks its History db** (`locking_mode = EXCLUSIVE`), so reads fail
@@ -75,7 +96,7 @@ local browser history databases. See README.md for usage and architecture.
   eyeball layout and highlighting.
 - Typecheck (no local typescript dep): install `typescript` + `@types/node`
   somewhere, symlink `node_modules/@types` to it, then `tsc -p .`
-  (`tsconfig.json` covers `extension/` and `test/`).
+  (`tsconfig.json` covers `extension/`, `bin/`, and `test/`).
 - End-to-end tool check without the TUI:
   `pi -ne -e ./extension/index.ts -t browser_history -p "use browser_history to find ..."`.
 - Manual: run `pi` anywhere and use `/history`.

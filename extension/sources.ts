@@ -5,9 +5,9 @@
  * Safari, on macOS / Linux / Windows. Pure filesystem inspection — nothing here
  * opens a database (see snapshot.ts).
  */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /** Storage layout of a history database. Determines the SQL used to read it. */
 export type Engine = "chromium" | "firefox" | "safari";
@@ -32,7 +32,7 @@ interface FileStat {
   size: number;
 }
 
-interface ChromiumRoot {
+export interface ChromiumRoot {
   browser: string;
   dir: string;
 }
@@ -248,14 +248,37 @@ function assignIds(sources: HistorySource[]): HistorySource[] {
   return sources;
 }
 
-/** All history databases on this machine, most recently written first. */
-export function discoverSources(): HistorySource[] {
+/** Additional Chromium user-data directories, explicitly labeled for attribution. */
+export function configuredChromiumRoots(): ChromiumRoot[] {
+  const raw = process.env.PI_BROWSER_HISTORY_CHROMIUM_ROOTS;
+  if (!raw) return [];
+  let roots: unknown;
+  try { roots = JSON.parse(raw); } catch { throw new Error("PI_BROWSER_HISTORY_CHROMIUM_ROOTS must be a JSON array of {browser, dir}."); }
+  if (!Array.isArray(roots) || roots.some((r) => !r || typeof r.browser !== "string" ||
+      !/^[a-z0-9][a-z0-9-]*$/.test(r.browser) || typeof r.dir !== "string" || !r.dir.trim())) {
+    throw new Error("PI_BROWSER_HISTORY_CHROMIUM_ROOTS must contain {browser: lowercase-id, dir: user-data-directory} objects.");
+  }
+  return roots.map((r) => ({ browser: r.browser, dir: resolve(r.dir.replace(/^~(?=\/|$)/, homedir())) }));
+}
+
+/** All history databases, deduplicated by real path, most recently written first. */
+export function discoverSources(options: { extraChromiumRoots?: ChromiumRoot[]; includeDefaults?: boolean } = {}): HistorySource[] {
+  const defaults = options.includeDefaults !== false;
   const sources: HistorySource[] = [];
-  for (const root of chromiumRoots()) sources.push(...chromiumSources(root));
-  sources.push(...firefoxSources());
-  sources.push(...safariSources());
-  assignIds(sources);
-  return sources.sort((a, b) => b.mtimeMs - a.mtimeMs || a.id.localeCompare(b.id));
+  for (const root of [...(options.extraChromiumRoots ?? configuredChromiumRoots()), ...(defaults ? chromiumRoots() : [])]) {
+    sources.push(...chromiumSources(root));
+  }
+  if (defaults) sources.push(...firefoxSources(), ...safariSources());
+  const seen = new Set<string>();
+  const unique = sources.filter((source) => {
+    let path: string;
+    try { path = realpathSync(source.dbPath); } catch { return false; } // profile may disappear during discovery
+    if (seen.has(path)) return false;
+    seen.add(path);
+    return true;
+  });
+  assignIds(unique);
+  return unique.sort((a, b) => b.mtimeMs - a.mtimeMs || a.id.localeCompare(b.id));
 }
 
 /**
