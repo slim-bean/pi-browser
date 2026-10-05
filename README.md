@@ -146,7 +146,7 @@ are resolved relative to the settings file that contains them:
 ```json
 {
   "packages": [
-    "../../projects/pi-browser",
+    "../../projects/pi-extensions/pi-browser",
     "git:github.com/slim-bean/pi-browser@v0.1.0"
   ]
 }

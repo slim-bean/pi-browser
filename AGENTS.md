@@ -12,7 +12,7 @@ local browser history databases. See README.md for usage and architecture.
 - Installable as a pi package (`package.json` `pi.extensions` → `./extension/index.ts`;
   pi deps are `peerDependencies` per docs/packages.md) via
   `pi install git:github.com/slim-bean/pi-browser[@tag]`. **Currently installed
-  as a local package**: `"../../projects/pi-browser"` in `~/.pi/agent/settings.json`
+  as a local package**: `"../../projects/pi-extensions/pi-browser"` in `~/.pi/agent/settings.json`
   `packages` (paths resolve relative to that file). Loaded in place, so edits
   need only `/reload`. A symlink in `~/.pi/agent/extensions/` is the alternative
   — never both, or the command becomes `/history:1` and `/history:2`.
